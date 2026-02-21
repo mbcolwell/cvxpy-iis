@@ -61,6 +61,17 @@ SolveResult = namedtuple(
     ['opt_value', 'status', 'primal_values', 'dual_values'])
 
 
+@dataclass
+class IISMember:
+    constraint: Constraint  # the original user constraint
+    rows: Optional[np.ndarray] = None  # which rows are involved, None = all rows
+
+    def __repr__(self):
+        if self.rows is None:
+            return f"IISMember({self.constraint})"
+        return f"IISMember({self.constraint}, rows={self.rows})"
+
+
 _COL_WIDTH = 79
 _HEADER = (
     '='*_COL_WIDTH +
@@ -132,6 +143,32 @@ def _validate_constraint(constraint):
     else:
         raise ValueError("Problem has an invalid constraint of type %s" %
                          type(constraint))
+
+
+def deletion_filter_iis(constraints: list[Constraint], solver: str) -> List[IISMember]:
+    """
+    Find an IIS with row-level granularity.
+
+    Pass 1: Constraint-level deletion filter.
+    Pass 2: TODO: Row-level deletion filter on multi-row constraints.
+    """
+    # --- Pass 1: which constraints? ---
+    iis_constrs = list(constraints)
+    for constr in constraints:
+        candidate = [c for c in iis_constrs if c is not constr]
+        if not candidate:
+            break
+        test_prob = Problem(Minimize(0), candidate)
+        test_prob.solve(solver=solver)
+        if test_prob.status in ('infeasible', 'infeasible_inaccurate'):
+            iis_constrs = candidate
+
+    # --- Pass 2: which rows within each constraint? ---
+    # TODO
+
+    iis_members = [IISMember(c) for c in iis_constrs]
+    return iis_members
+
 
 
 class Problem(u.Canonical):
@@ -650,6 +687,16 @@ class Problem(u.Canonical):
                     "Cannot specify both 'solver' and 'solver_path'. Please choose one.")
             return self._solve_solver_path(solve_func,solver_path, args, kwargs)
         return solve_func(self, *args, **kwargs)
+
+    def find_iis(self) -> list[IISMember]:
+        if not self.status == "infeasible":
+            raise ValueError("Problem must be infeasible to call find_iis()")
+
+        # Leverage infeasibility certificates from conic solvers to cheaply identify candidate constraints, then prune
+        # for irreducibility.
+        candidate_constraints = [c for c in self.constraints if abs(c.dual_value) > 1e-8]
+        return deletion_filter_iis(candidate_constraints, self.solver_stats.solver_name)
+
 
     @classmethod
     def register_solve(cls, name: str, func) -> None:
@@ -1366,9 +1413,9 @@ class Problem(u.Canonical):
         elif solution.status in s.INF_OR_UNB:
             for v in self.variables():
                 v.save_value(None)
-            for constr in self.constraints:
-                for dv in constr.dual_variables:
-                    dv.save_value(None)
+            for c in self.constraints:
+                if c.id in solution.dual_vars:
+                    c.save_dual_value(solution.dual_vars[c.id])
             self._value = solution.opt_val
         else:
             raise ValueError("Cannot unpack invalid solution: %s" % solution)
