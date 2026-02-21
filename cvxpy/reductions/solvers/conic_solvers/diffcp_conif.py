@@ -79,6 +79,15 @@ class DIFFCP(scs_conif.SCS):
     def invert(self, solution, inverse_data):
         """Returns the solution to the original problem given the inverse_data.
         """
+        # Extract dual variables early so they're available for both success and failure cases
+        dual_vars = utilities.extract_dual_vars_from_solver(
+            solution["y"],
+            inverse_data[ConicSolver.DIMS].zero,
+            utilities.extract_dual_value,
+            inverse_data[DIFFCP.EQ_CONSTR],
+            inverse_data[DIFFCP.NEQ_CONSTR]
+        )
+
         attr = {}
         if solution["solve_method"] == s.SCS:
             import scs
@@ -109,22 +118,9 @@ class DIFFCP(scs_conif.SCS):
             primal_vars = {
                 inverse_data[DIFFCP.VAR_ID]: solution["x"]
             }
-            eq_dual_vars = utilities.get_dual_values(
-                solution["y"][:inverse_data[ConicSolver.DIMS].zero],
-                self.extract_dual_value,
-                inverse_data[DIFFCP.EQ_CONSTR]
-            )
-            ineq_dual_vars = utilities.get_dual_values(
-                solution["y"][inverse_data[ConicSolver.DIMS].zero:],
-                self.extract_dual_value,
-                inverse_data[DIFFCP.NEQ_CONSTR]
-            )
-            dual_vars = {}
-            dual_vars.update(eq_dual_vars)
-            dual_vars.update(ineq_dual_vars)
             return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status, attr)
+            return failure_solution(status, attr, dual_vars)
 
     def solve_via_data(self, data, warm_start: bool, verbose: bool, solver_opts,
                        solver_cache=None):

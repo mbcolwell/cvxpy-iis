@@ -73,6 +73,30 @@ class ECOS_BB(ECOS):
         """
         status = self.STATUS_MAP[solution['info']['exitFlag']]
 
+        # Extract dual variables early so they're available for both success and failure cases
+        dual_vars = None
+        if not inverse_data['is_mip'] and 'y' in solution and 'z' in solution:
+            # First get inequality duals from 'z'
+            dual_vars = utilities.get_dual_values(
+                solution['z'],
+                utilities.extract_dual_value,
+                inverse_data[self.NEQ_CONSTR]
+            )
+            # Handle ExpCone permutation if needed
+            for con in inverse_data[self.NEQ_CONSTR]:
+                if isinstance(con, ExpCone):
+                    cid = con.id
+                    n_cones = con.num_cones()
+                    perm = utilities.expcone_permutor(n_cones, ECOS.EXP_CONE_ORDER)
+                    dual_vars[cid] = dual_vars[cid][perm]
+            # Then get equality duals from 'y'
+            eq_duals = utilities.get_dual_values(
+                solution['y'],
+                utilities.extract_dual_value,
+                inverse_data[self.EQ_CONSTR]
+            )
+            dual_vars.update(eq_duals)
+
         # Timing data
         attr = {}
         attr[s.SOLVE_TIME] = solution["info"]["timing"]["tsolve"]
@@ -86,29 +110,9 @@ class ECOS_BB(ECOS):
             primal_vars = {
                 inverse_data[self.VAR_ID]: intf.DEFAULT_INTF.const_to_matrix(solution['x'])
             }
-            dual_vars = None
-            if not inverse_data['is_mip']:
-                dual_vars = utilities.get_dual_values(
-                    solution['z'],
-                    utilities.extract_dual_value,
-                    inverse_data[self.NEQ_CONSTR]
-                )
-                for con in inverse_data[self.NEQ_CONSTR]:
-                    if isinstance(con, ExpCone):
-                        cid = con.id
-                        n_cones = con.num_cones()
-                        perm = utilities.expcone_permutor(n_cones,
-                                                          ECOS.EXP_CONE_ORDER)
-                        dual_vars[cid] = dual_vars[cid][perm]
-                eq_duals = utilities.get_dual_values(
-                    solution['y'],
-                    utilities.extract_dual_value,
-                    inverse_data[self.EQ_CONSTR]
-                )
-                dual_vars.update(eq_duals)
             return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status, attr)
+            return failure_solution(status, attr, dual_vars)
 
     def solve_via_data(self, data, warm_start: bool, verbose: bool, solver_opts, solver_cache=None):
         import ecos

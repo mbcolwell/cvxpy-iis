@@ -143,30 +143,29 @@ class SCIP(ConicSolver):
             s.NUM_ITERS: solution[s.NUM_ITERS],
             s.EXTRA_STATS: solution,
         }
+
+        # Extract dual variables early so they're available for both success and failure cases
         dual_vars = None
+        if "eq_dual" in solution and not inverse_data['is_mip']:
+            eq_dual = utilities.get_dual_values(
+                result_vec=solution['eq_dual'],
+                parse_func=utilities.extract_dual_value,
+                constraints=inverse_data[SCIP.EQ_CONSTR],
+            )
+            leq_dual = utilities.get_dual_values(
+                result_vec=solution['ineq_dual'],
+                parse_func=utilities.extract_dual_value,
+                constraints=inverse_data[SCIP.NEQ_CONSTR],
+            )
+            eq_dual.update(leq_dual)
+            dual_vars = eq_dual
 
         if status in s.SOLUTION_PRESENT:
             opt_val = solution['value'] + inverse_data[s.OFFSET]
             primal_vars = {inverse_data[SCIP.VAR_ID]: solution['primal']}
-
-            if "eq_dual" in solution and not inverse_data['is_mip']:
-                eq_dual = utilities.get_dual_values(
-                    result_vec=solution['eq_dual'],
-                    parse_func=utilities.extract_dual_value,
-                    constraints=inverse_data[SCIP.EQ_CONSTR],
-                )
-                leq_dual = utilities.get_dual_values(
-                    result_vec=solution['ineq_dual'],
-                    parse_func=utilities.extract_dual_value,
-                    constraints=inverse_data[SCIP.NEQ_CONSTR],
-                )
-
-                eq_dual.update(leq_dual)
-                dual_vars = eq_dual
-
             return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status, attr)
+            return failure_solution(status, attr, dual_vars)
 
     def solve_via_data(
             self,

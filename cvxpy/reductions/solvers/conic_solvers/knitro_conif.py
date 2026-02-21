@@ -343,39 +343,38 @@ class KNITRO(ConicSolver):
             status_kn, obj_kn, x_kn, y_kn = kn.KN_get_solution(kc)
             status = self.STATUS_MAP.get(status_kn, s.SOLVER_ERROR)
 
+            # Extract dual variables early so they're available for both success and failure cases
+            dual_vars = None
+            n_cons = int(results[KNITRO.N_CONS_KEY])
+            is_mip = bool(inverse_data.get("is_mip", False))
+            y_kn = (kn.KN_get_con_dual_values(kc) if n_cons > 0 else None)
+            if y_kn is not None and not is_mip:
+                dims = dims_to_solver_dict(inverse_data[s.DIMS] or {})
+                y_kn = y_kn[:n_cons]
+                n_eqs = int(dims.get(s.EQ_DIM, 0))
+                y = np.array(y_kn)
+                eq_dual_vars = utilities.get_dual_values(
+                    y[:n_eqs],
+                    utilities.extract_dual_value,
+                    inverse_data[KNITRO.EQ_CONSTR],
+                )
+                ineq_dual_vars = utilities.get_dual_values(
+                    y[n_eqs:],
+                    utilities.extract_dual_value,
+                    inverse_data[KNITRO.NEQ_CONSTR],
+                )
+                dual_vars = {**eq_dual_vars, **ineq_dual_vars}
+
             if status == s.UNBOUNDED:
-                solution = Solution(status, -np.inf, {}, {}, attr)
+                solution = Solution(status, -np.inf, {}, dual_vars, attr)
             elif (status not in s.SOLUTION_PRESENT) or (x_kn is None):
-                solution = failure_solution(status, attr)
+                solution = failure_solution(status, attr, dual_vars)
             else:
                 n_vars = int(results[KNITRO.N_VARS_KEY])
-                n_cons = int(results[KNITRO.N_CONS_KEY])
-
                 obj = obj_kn + inverse_data[s.OFFSET]
                 x_kn = x_kn[:n_vars]
                 x = np.array(x_kn)
                 primal_vars = {inverse_data[KNITRO.VAR_ID]: x}
-
-                dual_vars = None
-                is_mip = bool(inverse_data.get("is_mip", False))
-                y_kn = (kn.KN_get_con_dual_values(kc)
-                        if n_cons > 0 else None)
-                if y_kn is not None and not is_mip:
-                    dims = dims_to_solver_dict(inverse_data[s.DIMS] or {})
-                    y_kn = y_kn[:n_cons]
-                    n_eqs = int(dims.get(s.EQ_DIM, 0))
-                    y = np.array(y_kn)
-                    eq_dual_vars = utilities.get_dual_values(
-                        y[:n_eqs],
-                        utilities.extract_dual_value,
-                        inverse_data[KNITRO.EQ_CONSTR],
-                    )
-                    ineq_dual_vars = utilities.get_dual_values(
-                        y[n_eqs:],
-                        utilities.extract_dual_value,
-                        inverse_data[KNITRO.NEQ_CONSTR],
-                    )
-                    dual_vars = {**eq_dual_vars, **ineq_dual_vars}
                 solution = Solution(status, obj, primal_vars, dual_vars, attr)
         # Free the Knitro context.
         kn.KN_free(kc)

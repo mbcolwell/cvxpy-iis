@@ -99,6 +99,24 @@ class GUROBI(QpSolver):
                 s.NUM_ITERS: iter_count,
                 s.EXTRA_STATS: model}
 
+        # Extract dual variables early so they're available for both success and failure cases
+        dual_vars = None
+        if not inverse_data[GUROBI.IS_MIP] and m > 0:
+            try:
+                # Build dual vars dict keyed by constraint IDs
+                # Gurobi returns duals for [eq_constrs; ineq_constrs]
+                y = -np.array([constraints_grb[i].Pi for i in range(m)])
+                dual_vars = utilities.extract_dual_vars_from_solver(
+                    y,
+                    inverse_data[self.DIMS].zero,
+                    utilities.extract_dual_value,
+                    inverse_data[self.EQ_CONSTR],
+                    inverse_data[self.NEQ_CONSTR]
+                )
+            except Exception:
+                # If dual extraction fails, leave dual_vars as None
+                pass
+
         # Map GUROBI statuses back to CVXPY statuses
         status = self.STATUS_MAP.get(model.Status, s.SOLVER_ERROR)
         if status == s.USER_LIMIT and not model.SolCount:
@@ -113,28 +131,9 @@ class GUROBI(QpSolver):
                 intf.DEFAULT_INTF.const_to_matrix(np.array(x))
             }
 
-            # Only add duals if not a MIP.
-            dual_vars = None
-            if not inverse_data[GUROBI.IS_MIP]:
-                # Build dual vars dict keyed by constraint IDs
-                # Gurobi returns duals for [eq_constrs; ineq_constrs]
-                y = -np.array([constraints_grb[i].Pi for i in range(m)])
-                n_eq = inverse_data[self.DIMS].zero
-                eq_dual = utilities.get_dual_values(
-                    y[:n_eq],
-                    utilities.extract_dual_value,
-                    inverse_data[self.EQ_CONSTR])
-                ineq_dual = utilities.get_dual_values(
-                    y[n_eq:],
-                    utilities.extract_dual_value,
-                    inverse_data[self.NEQ_CONSTR])
-                dual_vars = {}
-                dual_vars.update(eq_dual)
-                dual_vars.update(ineq_dual)
-
             sol = Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            sol = failure_solution(status, attr)
+            sol = failure_solution(status, attr, dual_vars)
         return sol
 
     def solve_via_data(self, data, warm_start: bool, verbose: bool, solver_opts, solver_cache=None):

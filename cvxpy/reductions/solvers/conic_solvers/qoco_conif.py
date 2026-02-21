@@ -83,6 +83,21 @@ class QOCO(ConicSolver):
     def invert(self, solution, inverse_data):
         """Returns the solution to the original problem given the inverse_data.
         """
+        # Extract dual variables early so they're available for both success and failure cases
+        # Note: QOCO uses separate y and z for equality and inequality duals
+        eq_dual_vars = utilities.get_dual_values(
+            solution.y,
+            utilities.extract_dual_value,
+            inverse_data[QOCO.EQ_CONSTR]
+        )
+        ineq_dual_vars = utilities.get_dual_values(
+            solution.z,
+            utilities.extract_dual_value,
+            inverse_data[QOCO.NEQ_CONSTR]
+        )
+        dual_vars = {}
+        dual_vars.update(eq_dual_vars)
+        dual_vars.update(ineq_dual_vars)
 
         attr = {}
         status = self.STATUS_MAP[str(solution.status)]
@@ -95,24 +110,9 @@ class QOCO(ConicSolver):
             primal_vars = {
                 inverse_data[QOCO.VAR_ID]: solution.x
             }
-            eq_dual_vars = utilities.get_dual_values(
-                solution.y,
-                utilities.extract_dual_value,
-                inverse_data[QOCO.EQ_CONSTR]
-            )
-            ineq_dual_vars = utilities.get_dual_values(
-                solution.z,
-                utilities.extract_dual_value,
-                inverse_data[QOCO.NEQ_CONSTR]
-            )
-
-            dual_vars = {}
-            dual_vars.update(eq_dual_vars)
-            dual_vars.update(ineq_dual_vars)
-
             return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status, attr)
+            return failure_solution(status, attr, dual_vars)
 
     def apply(self, problem):
         """Returns a new problem and data for inverting the new solution.

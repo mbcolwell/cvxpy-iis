@@ -162,6 +162,20 @@ class HIGHS(ConicSolver):
 
         # map solver statuses back to CVXPY statuses
         status = self.STATUS_MAP.get(results["model_status"], s.UNKNOWN)
+
+        # Extract dual variables early so they're available for both success and failure cases
+        dual_vars = None
+        if not inverse_data['is_mip'] and "solution" in results and hasattr(results["solution"], "row_dual"):
+            # The dual values are retrieved in the order that the
+            # constraints were added in solve_via_data() below. We
+            # must be careful to map them to inverse_data[EQ_CONSTR]
+            # followed by inverse_data[NEQ_CONSTR] accordingly.
+            y = -np.array(results["solution"].row_dual)
+            dual_vars = utilities.get_dual_values(
+                y,
+                utilities.extract_dual_value,
+                inverse_data[HIGHS.EQ_CONSTR] + inverse_data[HIGHS.NEQ_CONSTR])
+
         if status in s.SOLUTION_PRESENT:
             opt_val = results["info"].objective_function_value + inverse_data[s.OFFSET]
             primal_vars = {
@@ -172,18 +186,6 @@ class HIGHS(ConicSolver):
                     np.array(results["solution"].col_value)
                 )
             }
-            # add duals if not a MIP.
-            dual_vars = None
-            if not inverse_data['is_mip']:
-                # The dual values are retrieved in the order that the
-                # constraints were added in solve_via_data() below. We
-                # must be careful to map them to inverse_data[EQ_CONSTR]
-                # followed by inverse_data[NEQ_CONSTR] accordingly.
-                y = -np.array(results["solution"].row_dual)
-                dual_vars = utilities.get_dual_values(
-                    y,
-                    utilities.extract_dual_value,
-                    inverse_data[HIGHS.EQ_CONSTR] + inverse_data[HIGHS.NEQ_CONSTR])
 
             attr[s.NUM_ITERS] = (
                 results["info"].ipm_iteration_count
@@ -194,7 +196,7 @@ class HIGHS(ConicSolver):
             )
             sol = Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            sol = failure_solution(status, attr)
+            sol = failure_solution(status, attr, dual_vars)
         return sol
 
     def solve_via_data(

@@ -47,6 +47,18 @@ class OSQP(QpSolver):
         import osqp
         is_pre_v1 = float(osqp.__version__.split('.')[0]) < 1
 
+        # Extract dual variables early so they're available for both success and failure cases
+        # OSQP returns y as [eq_duals; ineq_duals]
+        dual_vars = None
+        if hasattr(solution, 'y') and solution.y is not None:
+            dual_vars = utilities.extract_dual_vars_from_solver(
+                solution.y,
+                inverse_data[self.DIMS].zero,
+                utilities.extract_dual_value,
+                inverse_data[self.EQ_CONSTR],
+                inverse_data[self.NEQ_CONSTR]
+            )
+
         attr = {s.SOLVE_TIME: solution.info.run_time}
         attr[s.EXTRA_STATS] = solution
 
@@ -60,25 +72,10 @@ class OSQP(QpSolver):
                 OSQP.VAR_ID:
                 intf.DEFAULT_INTF.const_to_matrix(np.array(solution.x))
             }
-            # Build dual vars dict keyed by constraint IDs
-            # OSQP returns y as [eq_duals; ineq_duals]
-            y = solution.y
-            n_eq = inverse_data[self.DIMS].zero
-            eq_dual = utilities.get_dual_values(
-                y[:n_eq],
-                utilities.extract_dual_value,
-                inverse_data[self.EQ_CONSTR])
-            ineq_dual = utilities.get_dual_values(
-                y[n_eq:],
-                utilities.extract_dual_value,
-                inverse_data[self.NEQ_CONSTR])
-            dual_vars = {}
-            dual_vars.update(eq_dual)
-            dual_vars.update(ineq_dual)
             attr[s.NUM_ITERS] = solution.info.iter
             sol = Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            sol = failure_solution(status, attr)
+            sol = failure_solution(status, attr, dual_vars)
         return sol
 
     def solve_via_data(self, data, warm_start: bool, verbose: bool, solver_opts,

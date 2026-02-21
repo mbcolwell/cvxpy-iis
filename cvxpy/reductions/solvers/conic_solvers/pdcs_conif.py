@@ -74,11 +74,19 @@ class PDCS(ConicSolver):
     def invert(self, solution, inverse_data):
         """Returns the solution to the original problem give the inverse_data.
         """
+        # Extract dual variables early so they're available for both success and failure cases
+        dual_vars = utilities.extract_dual_vars_from_solver(
+            np.array(solution.y.recovered_dual.dual_sol.y),
+            inverse_data[ConicSolver.DIMS].zero,
+            self.extract_dual_value,
+            inverse_data[PDCS.EQ_CONSTR],
+            inverse_data[PDCS.NEQ_CONSTR]
+        )
+
         attr = {}
         status = self.STATUS_MAP[str(solution.info.exit_status)]
         attr[s.SOLVE_TIME] = solution.info.time
         attr[s.NUM_ITERS] = solution.info.iter
-
 
         if status in s.SOLUTION_PRESENT:
             primal_val = solution.info.pObj
@@ -86,22 +94,9 @@ class PDCS(ConicSolver):
             primal_vars = {
                 inverse_data[PDCS.VAR_ID]: np.array(solution.x.recovered_primal.primal_sol.x)
             }
-            eq_dual_vars = utilities.get_dual_values(
-                np.array(solution.y.recovered_dual.dual_sol.y[:inverse_data[ConicSolver.DIMS].zero]),
-                self.extract_dual_value,
-                inverse_data[PDCS.EQ_CONSTR]
-            )
-            ineq_dual_vars = utilities.get_dual_values(
-                np.array(solution.y.recovered_dual.dual_sol.y[inverse_data[ConicSolver.DIMS].zero:]),
-                self.extract_dual_value,
-                inverse_data[PDCS.NEQ_CONSTR]
-            )
-            dual_vars = {}
-            dual_vars.update(eq_dual_vars)
-            dual_vars.update(ineq_dual_vars)
             return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status, attr)
+            return failure_solution(status, attr, dual_vars)
 
     def solve_via_data(self, data, warm_start: bool, verbose: bool, solver_opts, solver_cache=None):
         """Returns the result of the call to the solver.

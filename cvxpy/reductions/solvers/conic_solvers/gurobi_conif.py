@@ -115,25 +115,27 @@ class GUROBI(ConicSolver):
                 s.SOLVE_TIME: solution[s.SOLVE_TIME],
                 s.NUM_ITERS: bar_iter_count}
 
-        primal_vars = None
+        # Extract dual variables early so they're available for both success and failure cases
         dual_vars = None
+        if "eq_dual" in solution and not inverse_data['is_mip']:
+            eq_dual = utilities.get_dual_values(
+                solution['eq_dual'],
+                utilities.extract_dual_value,
+                inverse_data[GUROBI.EQ_CONSTR])
+            leq_dual = utilities.get_dual_values(
+                solution['ineq_dual'],
+                utilities.extract_dual_value,
+                inverse_data[GUROBI.NEQ_CONSTR])
+            eq_dual.update(leq_dual)
+            dual_vars = eq_dual
+
+        primal_vars = None
         if status in s.SOLUTION_PRESENT:
             opt_val = solution['value'] + inverse_data[s.OFFSET]
             primal_vars = {inverse_data[GUROBI.VAR_ID]: solution['primal']}
-            if "eq_dual" in solution and not inverse_data['is_mip']:
-                eq_dual = utilities.get_dual_values(
-                    solution['eq_dual'],
-                    utilities.extract_dual_value,
-                    inverse_data[GUROBI.EQ_CONSTR])
-                leq_dual = utilities.get_dual_values(
-                    solution['ineq_dual'],
-                    utilities.extract_dual_value,
-                    inverse_data[GUROBI.NEQ_CONSTR])
-                eq_dual.update(leq_dual)
-                dual_vars = eq_dual
             return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status, attr)
+            return failure_solution(status, attr, dual_vars)
 
     def solve_via_data(self, data, warm_start: bool, verbose: bool, solver_opts, solver_cache=None):
         """Returns the result of the call to the solver.

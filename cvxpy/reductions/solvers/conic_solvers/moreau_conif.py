@@ -137,6 +137,15 @@ class MOREAU(ConicSolver):
 
     def invert(self, solution, inverse_data):
         """Returns the solution to the original problem given the inverse_data."""
+        # Extract dual variables early so they're available for both success and failure cases
+        dual_vars = utilities.extract_dual_vars_from_solver(
+            solution.z,
+            inverse_data[ConicSolver.DIMS].zero,
+            self.extract_dual_value,
+            inverse_data[self.EQ_CONSTR],
+            inverse_data[self.NEQ_CONSTR]
+        )
+
         attr = {}
         status_map = self.STATUS_MAP.copy()
 
@@ -158,22 +167,9 @@ class MOREAU(ConicSolver):
             primal_val = solution.obj_val
             opt_val = primal_val + inverse_data[s.OFFSET]
             primal_vars = {inverse_data[self.VAR_ID]: solution.x}
-            eq_dual_vars = utilities.get_dual_values(
-                solution.z[: inverse_data[ConicSolver.DIMS].zero],
-                self.extract_dual_value,
-                inverse_data[self.EQ_CONSTR],
-            )
-            ineq_dual_vars = utilities.get_dual_values(
-                solution.z[inverse_data[ConicSolver.DIMS].zero :],
-                self.extract_dual_value,
-                inverse_data[self.NEQ_CONSTR],
-            )
-            dual_vars = {}
-            dual_vars.update(eq_dual_vars)
-            dual_vars.update(ineq_dual_vars)
             return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status, attr)
+            return failure_solution(status, attr, dual_vars)
 
     @staticmethod
     def handle_options(verbose: bool, solver_opts: dict):

@@ -178,31 +178,34 @@ class COPT(ConicSolver):
                 s.NUM_ITERS: solution[s.NUM_ITERS],
                 s.EXTRA_STATS: solution['model']}
 
-        primal_vars = None
+        # Extract dual variables early so they're available for both success and failure cases
         dual_vars = None
+        if not inverse_data['is_mip'] and s.EQ_DUAL in solution and s.INEQ_DUAL in solution:
+            eq_dual = utilities.get_dual_values(
+                solution[s.EQ_DUAL],
+                self.extract_dual_value,
+                inverse_data[COPT.EQ_CONSTR])
+            leq_dual = utilities.get_dual_values(
+                solution[s.INEQ_DUAL],
+                self.extract_dual_value,
+                inverse_data[COPT.NEQ_CONSTR])
+            # Handle ExpCone permutation if needed
+            for con in inverse_data[self.NEQ_CONSTR]:
+                if isinstance(con, ExpCone):
+                    cid = con.id
+                    n_cones = con.num_cones()
+                    perm = utilities.expcone_permutor(n_cones, COPT.EXP_CONE_ORDER)
+                    leq_dual[cid] = leq_dual[cid][perm]
+            eq_dual.update(leq_dual)
+            dual_vars = eq_dual
+
+        primal_vars = None
         if status in s.SOLUTION_PRESENT:
             opt_val = solution[s.VALUE] + inverse_data[s.OFFSET]
             primal_vars = {inverse_data[COPT.VAR_ID]: solution[s.PRIMAL]}
-            if not inverse_data['is_mip']:
-                eq_dual = utilities.get_dual_values(
-                    solution[s.EQ_DUAL],
-                    self.extract_dual_value,
-                    inverse_data[COPT.EQ_CONSTR])
-                leq_dual = utilities.get_dual_values(
-                    solution[s.INEQ_DUAL],
-                    self.extract_dual_value,
-                    inverse_data[COPT.NEQ_CONSTR])
-                for con in inverse_data[self.NEQ_CONSTR]:
-                    if isinstance(con, ExpCone):
-                        cid = con.id
-                        n_cones = con.num_cones()
-                        perm = utilities.expcone_permutor(n_cones, COPT.EXP_CONE_ORDER)
-                        leq_dual[cid] = leq_dual[cid][perm]
-                eq_dual.update(leq_dual)
-                dual_vars = eq_dual
             return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status, attr)
+            return failure_solution(status, attr, dual_vars)
 
     def solve_via_data(self, data, warm_start: bool, verbose: bool, solver_opts, solver_cache=None):
         """
