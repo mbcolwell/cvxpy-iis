@@ -13,6 +13,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
+
+from typing import Any, Dict, Optional
+
 import numpy as np
 
 import cvxpy.settings as s
@@ -27,7 +30,7 @@ INF_OR_UNB_MESSAGE = """
     """
 
 
-def failure_solution(status, attr=None) -> "Solution":
+def failure_solution(status, attr=None, dual_vars: Optional[Dict[Any, Any]] = None) -> "Solution":
     """Factory function for infeasible or unbounded solutions.
 
     Parameters
@@ -50,7 +53,7 @@ def failure_solution(status, attr=None) -> "Solution":
         attr = {}
     if status == s.INFEASIBLE_OR_UNBOUNDED:
         attr['message'] = INF_OR_UNB_MESSAGE
-    return Solution(status, opt_val, {}, {}, attr)
+    return Solution(status, opt_val, {}, dual_vars, attr)
 
 
 class Solution:

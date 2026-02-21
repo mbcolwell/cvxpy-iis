@@ -52,6 +52,15 @@ class COSMO(CLARABEL):
 
         model: cosmopy.Model = solution
 
+        # Extract dual variables early so they're available for both success and failure cases
+        dual_vars = utilities.extract_dual_vars_from_solver(
+            model.get_y(),
+            inverse_data[self.DIMS].zero,
+            self.extract_dual_value,
+            inverse_data[self.EQ_CONSTR],
+            inverse_data[self.NEQ_CONSTR]
+        )
+
         attr = {}
         status = self.STATUS_MAP[model.get_status()]
         times = model.get_times()
@@ -65,23 +74,9 @@ class COSMO(CLARABEL):
             opt_val = primal_val + inverse_data[s.OFFSET]
             primal_vars = {inverse_data[self.VAR_ID]: model.get_x()}
 
-            eq_dual_vars = utilities.get_dual_values(
-                model.get_y()[: inverse_data[self.DIMS].zero],
-                self.extract_dual_value,
-                inverse_data[self.EQ_CONSTR],
-            )
-
-            ineq_dual_vars = utilities.get_dual_values(
-                model.get_y()[inverse_data[self.DIMS].zero :],
-                self.extract_dual_value,
-                inverse_data[self.NEQ_CONSTR],
-            )
-
-            dual_vars = eq_dual_vars | ineq_dual_vars
-
             return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status, attr)
+            return failure_solution(status, attr, dual_vars)
 
     @staticmethod
     def parse_solver_opts(verbose, opts, settings=None):

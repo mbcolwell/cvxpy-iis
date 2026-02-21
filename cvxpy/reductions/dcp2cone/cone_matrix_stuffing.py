@@ -476,20 +476,8 @@ class ConeMatrixStuffing(MatrixStuffing):
         if solution.status not in s.ERROR and not inverse_data.minimize:
             opt_val = -solution.opt_val
 
-        primal_vars, dual_vars = {}, {}
-        if solution.status not in s.SOLUTION_PRESENT:
-            return Solution(solution.status, opt_val, primal_vars, dual_vars,
-                            solution.attr)
-
-        # Split vectorized variable into components.
-        x_opt = list(solution.primal_vars.values())[0]
-        for var_id, offset in var_map.items():
-            shape = inverse_data.var_shapes[var_id]
-            size = np.prod(shape, dtype=int)
-            primal_vars[var_id] = np.reshape(x_opt[offset:offset+size], shape,
-                                             order='F')
-
         # Remap dual variables if dual exists (problem is convex).
+        dual_vars = {}
         if solution.dual_vars is not None:
             for old_con, new_con in con_map.items():
                 con_obj = inverse_data.id2cons[old_con]
@@ -498,11 +486,18 @@ class ConeMatrixStuffing(MatrixStuffing):
                 if shape == () or isinstance(con_obj, (ExpCone, SOC)):
                     dual_vars[old_con] = solution.dual_vars[new_con]
                 else:
-                    dual_vars[old_con] = np.reshape(
-                        solution.dual_vars[new_con],
-                        shape,
-                        order='F'
-                    )
+                    dual_vars[old_con] = np.reshape(solution.dual_vars[new_con], shape, order="F")
 
-        return Solution(solution.status, opt_val, primal_vars, dual_vars,
-                        solution.attr)
+        primal_vars = {}
+        if solution.status not in s.SOLUTION_PRESENT:
+            return Solution(solution.status, opt_val, primal_vars, dual_vars, solution.attr)
+
+        # Split vectorized variable into components.
+        x_opt = list(solution.primal_vars.values())[0]
+        for var_id, offset in var_map.items():
+            shape = inverse_data.var_shapes[var_id]
+            size = np.prod(shape, dtype=int)
+            primal_vars[var_id] = np.reshape(x_opt[offset : offset + size], shape, order="F")
+
+        return Solution(solution.status, opt_val, primal_vars, dual_vars, solution.attr)
+
