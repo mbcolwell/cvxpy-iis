@@ -53,7 +53,7 @@ def failure_solution(status, attr=None, dual_vars: Optional[Dict[Any, Any]] = No
         attr = {}
     if status == s.INFEASIBLE_OR_UNBOUNDED:
         attr['message'] = INF_OR_UNB_MESSAGE
-    return Solution(status, opt_val, {}, dual_vars, attr)
+    return Solution(status, opt_val, {}, dual_vars or {}, attr)
 
 
 class Solution:

@@ -97,13 +97,14 @@ class CBC(ConicSolver):
         """Returns the solution to the original problem given the inverse_data.
         """
         status = solution['status']
+        attr = {}  # CBC doesn't provide timing or iteration info in solution dict
 
         if status in s.SOLUTION_PRESENT:
             opt_val = solution['value'] + inverse_data[s.OFFSET]
             primal_vars = {inverse_data[self.VAR_ID]: solution['primal']}
-            return Solution(status, opt_val, primal_vars, None, {})
+            return Solution(status, opt_val, primal_vars, None, attr)
         else:
-            return failure_solution(status)
+            return failure_solution(status, attr)
 
     def solve_via_data(self, data, warm_start: bool, verbose: bool, solver_opts, solver_cache=None):
         # Import basic modelling tools of cylp

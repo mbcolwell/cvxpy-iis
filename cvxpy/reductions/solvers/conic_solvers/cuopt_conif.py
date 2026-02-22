@@ -167,28 +167,33 @@ class CUOPT(ConicSolver):
         """
         status = solution.status
 
-        if status in s.SOLUTION_PRESENT:
-            dual_vars = None
-            opt_val = solution.opt_val + inverse_data[s.OFFSET]
-            primal_vars = {inverse_data[self.VAR_ID]: solution.primal_vars}
-            if s.EQ_DUAL in solution.dual_vars and inverse_data['lp']:
+        # Extract dual variables early so they're available for both success and failure cases
+        dual_vars = None
+        if hasattr(solution, 'dual_vars') and solution.dual_vars and inverse_data['lp']:
+            if s.EQ_DUAL in solution.dual_vars or s.INEQ_DUAL in solution.dual_vars:
                 dual_vars = {}
-                if len(inverse_data[self.EQ_CONSTR]) > 0:
+                if s.EQ_DUAL in solution.dual_vars and len(inverse_data[self.EQ_CONSTR]) > 0:
                     eq_dual = utilities.get_dual_values(
                         solution.dual_vars[s.EQ_DUAL],
                         utilities.extract_dual_value,
                         inverse_data[self.EQ_CONSTR])
                     dual_vars.update(eq_dual)
-                if len(inverse_data[self.NEQ_CONSTR]) > 0:
+                if s.INEQ_DUAL in solution.dual_vars and len(inverse_data[self.NEQ_CONSTR]) > 0:
                     leq_dual = utilities.get_dual_values(
                         solution.dual_vars[s.INEQ_DUAL],
                         utilities.extract_dual_value,
                         inverse_data[self.NEQ_CONSTR])
                     dual_vars.update(leq_dual)
 
-            return Solution(status, opt_val, primal_vars, dual_vars, solution.attr)
+        # Get attributes from solution object
+        attr = solution.attr if hasattr(solution, 'attr') else {}
+
+        if status in s.SOLUTION_PRESENT:
+            opt_val = solution.opt_val + inverse_data[s.OFFSET]
+            primal_vars = {inverse_data[self.VAR_ID]: solution.primal_vars}
+            return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status)
+            return failure_solution(status, attr, dual_vars)
 
     # Returns a SolverSettings object
     def _get_solver_settings(self, solver_opts, mip, verbose):

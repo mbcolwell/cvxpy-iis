@@ -261,16 +261,10 @@ class CPLEX(ConicSolver):
 
         status = get_status(model)
 
-        primal_vars = None
+        # Extract dual variables early so they're available for both success and failure cases
         dual_vars = None
-        if status in s.SOLUTION_PRESENT:
-            opt_val = (model.solution.get_objective_value() +
-                       inverse_data[s.OFFSET])
-
-            x = np.array(model.solution.get_values())
-            primal_vars = {inverse_data[CPLEX.VAR_ID]: x}
-
-            if not inverse_data['is_mip']:
+        if not inverse_data['is_mip']:
+            try:
                 # The dual values are retrieved in the order that the
                 # constraints were added in solve_via_data() below. We
                 # must be careful to map them to inverse_data[EQ_CONSTR]
@@ -280,10 +274,21 @@ class CPLEX(ConicSolver):
                     y,
                     utilities.extract_dual_value,
                     inverse_data[CPLEX.EQ_CONSTR] + inverse_data[CPLEX.NEQ_CONSTR])
+            except Exception:
+                # If dual extraction fails (e.g., for infeasible problems), leave as None
+                pass
+
+        primal_vars = None
+        if status in s.SOLUTION_PRESENT:
+            opt_val = (model.solution.get_objective_value() +
+                       inverse_data[s.OFFSET])
+
+            x = np.array(model.solution.get_values())
+            primal_vars = {inverse_data[CPLEX.VAR_ID]: x}
 
             return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status)
+            return failure_solution(status, attr, dual_vars)
 
     def solve_via_data(self, data, warm_start: bool, verbose: bool, solver_opts, solver_cache=None):
         import cplex

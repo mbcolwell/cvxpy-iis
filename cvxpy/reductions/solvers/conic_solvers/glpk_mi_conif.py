@@ -105,13 +105,14 @@ class GLPK_MI(GLPK):
         """Returns the solution to the original problem given the inverse_data.
         """
         status = solution['status']
+        attr = {}  # GLPK_MI doesn't provide timing or iteration info in solution dict
 
         if status in s.SOLUTION_PRESENT:
             opt_val = solution['value'] + inverse_data[s.OFFSET]
             primal_vars = {inverse_data[self.VAR_ID]: solution['primal']}
-            return Solution(status, opt_val, primal_vars, None, {})
+            return Solution(status, opt_val, primal_vars, None, attr)
         else:
-            return failure_solution(status)
+            return failure_solution(status, attr)
 
     @staticmethod
     def _restore_solver_options(old_options) -> None:

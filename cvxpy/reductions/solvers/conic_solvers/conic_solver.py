@@ -321,9 +321,9 @@ class ConicSolver(Solver):
         """
         status = solution['status']
 
-        if status in s.SOLUTION_PRESENT:
-            opt_val = solution['value']
-            primal_vars = {inverse_data[self.VAR_ID]: solution['primal']}
+        # Extract dual variables early so they're available for both success and failure cases
+        dual_vars = None
+        if 'eq_dual' in solution and 'ineq_dual' in solution:
             eq_dual = utilities.get_dual_values(
                 solution['eq_dual'],
                 utilities.extract_dual_value,
@@ -334,9 +334,15 @@ class ConicSolver(Solver):
                 inverse_data[Solver.NEQ_CONSTR])
             eq_dual.update(leq_dual)
             dual_vars = eq_dual
-            return Solution(status, opt_val, primal_vars, dual_vars, {})
+
+        attr = {}  # Default: no attributes
+
+        if status in s.SOLUTION_PRESENT:
+            opt_val = solution['value']
+            primal_vars = {inverse_data[self.VAR_ID]: solution['primal']}
+            return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status)
+            return failure_solution(status, attr, dual_vars)
 
     def _prepare_data_and_inv_data(self, problem):
         data = {}

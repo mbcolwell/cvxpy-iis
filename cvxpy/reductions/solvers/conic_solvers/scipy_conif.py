@@ -241,39 +241,40 @@ class SCIPY(ConicSolver):
         if (status == s.OPTIMAL_INACCURATE) and (solution.x is None):
             status = s.SOLVER_ERROR
 
-        primal_vars = None
+        # Extract dual variables early so they're available for both success and failure cases
         dual_vars = None
+        # SciPy linprog only returns duals for version >= 1.7.0
+        # and method is one of 'highs', 'highs-ds' or 'highs-ipm'
+        # MIP problems don't have duals and thus are not updated.
+        if 'ineqlin' in solution and 'eqlin' in solution and not inverse_data['is_mip']:
+            eq_dual = utilities.get_dual_values(
+                -solution['eqlin']['marginals'],
+                utilities.extract_dual_value,
+                inverse_data[self.EQ_CONSTR])
+            leq_dual = utilities.get_dual_values(
+                -solution['ineqlin']['marginals'],
+                utilities.extract_dual_value,
+                inverse_data[self.NEQ_CONSTR])
+            eq_dual.update(leq_dual)
+            dual_vars = eq_dual
+
+        # Build attributes dict
+        attr = {}
+        if "nit" in solution:  # Number of interior-point or simplex iterations
+            attr[s.NUM_ITERS] = solution['nit']
+        if "mip_gap" in solution:  # Branch and bound statistics
+            attr[s.EXTRA_STATS] = {"mip_gap": solution['mip_gap'],
+                                   "mip_node_count": solution['mip_node_count'],
+                                   "mip_dual_bound": solution['mip_dual_bound']}
+
+        primal_vars = None
         if status in s.SOLUTION_PRESENT:
             primal_val = solution['fun']
             opt_val = primal_val + inverse_data[s.OFFSET]
             primal_vars = {inverse_data[self.VAR_ID]: solution['x']}
-
-            # SciPy linprog only returns duals for version >= 1.7.0
-            # and method is one of 'highs', 'highs-ds' or 'highs-ipm'
-            # MIP problems don't have duals and thus are not updated.
-            if 'ineqlin' in solution and not inverse_data['is_mip']:
-                eq_dual = utilities.get_dual_values(
-                    -solution['eqlin']['marginals'],
-                    utilities.extract_dual_value,
-                    inverse_data[self.EQ_CONSTR])
-                leq_dual = utilities.get_dual_values(
-                    -solution['ineqlin']['marginals'],
-                    utilities.extract_dual_value,
-                    inverse_data[self.NEQ_CONSTR])
-                eq_dual.update(leq_dual)
-                dual_vars = eq_dual
-            
-            attr = {}
-            if "nit" in solution: # Number of interior-point or simplex iterations
-                attr[s.NUM_ITERS] = solution['nit']
-            if "mip_gap" in solution: # Branch and bound statistics
-                attr[s.EXTRA_STATS] = {"mip_gap": solution['mip_gap'], 
-                                       "mip_node_count": solution['mip_node_count'], 
-                                       "mip_dual_bound": solution['mip_dual_bound']}
-
             return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status)
+            return failure_solution(status, attr, dual_vars)
     
     def cite(self, data):
         """Returns bibtex citation for the solver.

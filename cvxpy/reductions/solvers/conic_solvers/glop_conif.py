@@ -115,19 +115,24 @@ class GLOP(ConicSolver):
         """Returns the solution to the original problem."""
         status = solution["status"]
 
-        if status in s.SOLUTION_PRESENT:
-            primal_vars = {
-                inverse_data[self.VAR_ID]: solution["primal"]
-            }
+        # Extract dual variables early so they're available for both success and failure cases
+        dual_vars = None
+        if "dual" in solution:
             dual_vars = utilities.get_dual_values(
                 result_vec=solution["dual"],
                 parse_func=utilities.extract_dual_value,
                 constraints=inverse_data["constraints"],
             )
-            return Solution(status, solution["value"], primal_vars, dual_vars,
-                            {})
+
+        attr = {}  # GLOP doesn't currently provide timing or iteration info
+
+        if status in s.SOLUTION_PRESENT:
+            primal_vars = {
+                inverse_data[self.VAR_ID]: solution["primal"]
+            }
+            return Solution(status, solution["value"], primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status)
+            return failure_solution(status, attr, dual_vars)
 
     def solve_via_data(
             self,

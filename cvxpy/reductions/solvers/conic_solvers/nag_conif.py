@@ -151,17 +151,18 @@ class NAG(ConicSolver):
         sln = solution['sln']
 
         attr = {}
-        if status in s.SOLUTION_PRESENT:
-            opt_val = sln.rinfo[0] + inverse_data[s.OBJ_OFFSET]
-            nr = inverse_data['nr']
-            x = sln.x[0:nr]
-            primal_vars = {inverse_data[self.VAR_ID]: x}
-            attr[s.SOLVE_TIME] = sln.stats[5]
-            attr[s.NUM_ITERS] = sln.stats[0]
-            # Recover dual variables
-            dual_vars = dict()
+        # Extract timing and iteration info if available
+        if hasattr(sln, 'stats') and sln.stats is not None:
+            if len(sln.stats) > 5:
+                attr[s.SOLVE_TIME] = sln.stats[5]
+            if len(sln.stats) > 0:
+                attr[s.NUM_ITERS] = sln.stats[0]
+
+        # Try to extract dual variables even for non-optimal status
+        dual_vars = dict()
+        try:
             lin_dim = sum(ell for _, ell in inverse_data['lin_dim'])
-            if lin_dim > 0:
+            if lin_dim > 0 and hasattr(sln, 'u') and sln.u is not None:
                 lin_dvars = np.zeros(lin_dim)
                 idx = 0
                 for i in range(lin_dim):
@@ -175,7 +176,7 @@ class NAG(ConicSolver):
                         dual_vars[id] = np.array(lin_dvars[idx:(idx + dim)])
                     idx += dim
             soc_dim = sum(ell for _, ell in inverse_data['soc_dim'])
-            if soc_dim > 0:
+            if soc_dim > 0 and hasattr(sln, 'uc') and sln.uc is not None:
                 idx = 0
                 for id, dim in inverse_data['soc_dim']:
                     if dim == 1:
@@ -183,9 +184,18 @@ class NAG(ConicSolver):
                     else:
                         dual_vars[id] = np.array(sln.uc[idx:(idx + dim)])
                     idx += dim
+        except Exception:
+            # If dual extraction fails, keep dual_vars as empty dict
+            pass
+
+        if status in s.SOLUTION_PRESENT:
+            opt_val = sln.rinfo[0] + inverse_data[s.OBJ_OFFSET]
+            nr = inverse_data['nr']
+            x = sln.x[0:nr]
+            primal_vars = {inverse_data[self.VAR_ID]: x}
             sol = Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            sol = failure_solution(status)
+            sol = failure_solution(status, attr, dual_vars if dual_vars else None)
         return sol
 
     def solve_via_data(self, data, warm_start: bool, verbose: bool, solver_opts, solver_cache=None):

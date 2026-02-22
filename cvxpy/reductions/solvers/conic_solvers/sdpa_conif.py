@@ -116,9 +116,9 @@ class SDPA(ConicSolver):
         """
         status = solution['status']
 
-        if status in s.SOLUTION_PRESENT:
-            opt_val = solution['value']
-            primal_vars = {inverse_data[self.VAR_ID]: solution['primal']}
+        # Extract dual variables early so they're available for both success and failure cases
+        dual_vars = None
+        if 'eq_dual' in solution and 'ineq_dual' in solution:
             eq_dual = utilities.get_dual_values(
                 solution['eq_dual'],
                 utilities.extract_dual_value,
@@ -129,9 +129,15 @@ class SDPA(ConicSolver):
                 inverse_data[Solver.NEQ_CONSTR])
             eq_dual.update(leq_dual)
             dual_vars = eq_dual
-            return Solution(status, opt_val, primal_vars, dual_vars, {})
+
+        attr = {}  # SDPA doesn't provide timing or iteration info in solution dict
+
+        if status in s.SOLUTION_PRESENT:
+            opt_val = solution['value']
+            primal_vars = {inverse_data[self.VAR_ID]: solution['primal']}
+            return Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            return failure_solution(status)
+            return failure_solution(status, attr, dual_vars)
 
     def solve_via_data(self, data, warm_start: bool, verbose: bool, solver_opts, solver_cache=None):
         r"""

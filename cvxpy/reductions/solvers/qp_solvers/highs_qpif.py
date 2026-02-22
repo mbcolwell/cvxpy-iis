@@ -80,6 +80,24 @@ class HIGHS(QpSolver):
             s.EXTRA_STATS: results["info"],
         }
 
+        # Extract dual variables early so they're available for both success and failure cases
+        dual_vars = None
+        if not inverse_data[HIGHS.IS_MIP] and "solution" in results and hasattr(results["solution"], "row_dual"):
+            try:
+                # Build dual vars dict keyed by constraint IDs
+                # HiGHS returns duals for [eq_constrs; ineq_constrs]
+                y = -np.array(results["solution"].row_dual)
+                dual_vars = utilities.extract_dual_vars_from_solver(
+                    y,
+                    inverse_data[self.DIMS].zero,
+                    utilities.extract_dual_value,
+                    inverse_data[self.EQ_CONSTR],
+                    inverse_data[self.NEQ_CONSTR]
+                )
+            except Exception:
+                # If dual extraction fails, leave dual_vars as None
+                pass
+
         # map solver statuses back to CVXPY statuses
         status = self.STATUS_MAP.get(results["model_status"], s.UNKNOWN)
         if status in s.SOLUTION_PRESENT:
@@ -89,24 +107,6 @@ class HIGHS(QpSolver):
                     np.array(results["solution"].col_value)
                 )
             }
-            # add duals if not a MIP.
-            dual_vars = None
-            if not inverse_data[HIGHS.IS_MIP]:
-                # Build dual vars dict keyed by constraint IDs
-                # HiGHS returns duals for [eq_constrs; ineq_constrs]
-                y = -np.array(results["solution"].row_dual)
-                n_eq = inverse_data[self.DIMS].zero
-                eq_dual = utilities.get_dual_values(
-                    y[:n_eq],
-                    utilities.extract_dual_value,
-                    inverse_data[self.EQ_CONSTR])
-                ineq_dual = utilities.get_dual_values(
-                    y[n_eq:],
-                    utilities.extract_dual_value,
-                    inverse_data[self.NEQ_CONSTR])
-                dual_vars = {}
-                dual_vars.update(eq_dual)
-                dual_vars.update(ineq_dual)
             attr[s.NUM_ITERS] = (
                 results["info"].ipm_iteration_count
                 + results["info"].crossover_iteration_count
@@ -116,7 +116,7 @@ class HIGHS(QpSolver):
             )
             sol = Solution(status, opt_val, primal_vars, dual_vars, attr)
         else:
-            sol = failure_solution(status, attr)
+            sol = failure_solution(status, attr, dual_vars)
         return sol
 
     def solve_via_data(
